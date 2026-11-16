@@ -1,14 +1,13 @@
 /* جدول التسميد العلمي بالتنقيط حسب تاريخ الزراعة + تنبيهات (SME Agri)
-   المصدر: منظمة الأغذية والزراعة (FAO) - برامج التسميد بالتنقيط (الجرعات بالـ كجم/هكتار للرية الواحدة) */
+   المصدر: منظمة الأغذية والزراعة (FAO) - برامج التسميد بالتنقيط */
 (function () {
   'use strict';
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
-  const J = (k, d) => { try { return JSON.parse(lsGet(k, '')) || d; } catch (e) { return d; } };
+  const J = (k, d) => { try { const v = lsGet(k, ''); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
   const DAYN = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
-  // ---------- الأسمدة القياسية المعتمدة ----------
   const MAP = 'ماب MAP 12-61-0',
         AS  = 'سلفات الأمونيوم 21%',
         AN  = 'نترات الأمونيوم 33.5%',
@@ -31,7 +30,6 @@
 
   const I = (p, lo, hi, u, alt) => ({ p, lo, hi: hi || lo, u: u || 'كغ', alt: alt || '' });
 
-  // برامج التسميد بالتنقيط للهكتار (3 ريات تسميد أسبوعياً: الرية 1 والرية 3 لخزان B، والرية 2 لخزان A نترات الكالسيوم منفردة)
   const PROG = {
     tomato: {
       ar: 'الطماطم',
@@ -231,48 +229,68 @@
     }
   };
 
-  const cropKey = (txt) => { const t = String(txt || ''); for (const k in PROG) if (PROG[k].re.test(t)) return k; return null; };
+  const cropKey = (txt) => {
+    const t = String(txt || '');
+    for (const k in PROG) {
+      if (PROG[k].re.test(t)) return k;
+    }
+    return null;
+  };
 
-  // ---------- أدوات ----------
-  const ymd = (d) => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  const ymd = (d) => new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d); };
-  const diffDays = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5);
+  const diffDays = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
   const wday = (s) => new Date(s + 'T12:00:00').getDay();
   const st = () => (typeof S !== 'undefined' ? S : { fields: [] });
-  const areaHa = (f) => { const M = { 'هكتار': 10000, 'فدان': 4200, 'دونم': 1000, 'م²': 1 }; return (parseFloat(f.area) || 0) * (M[st().areaUnit] || 10000) / 10000; };
-  const irrDays = () => { const d = J('sme_fs_days', [6, 1, 3]); return Array.isArray(d) && d.length === 3 ? d :; };
+  const areaHa = (f) => {
+    const M = { 'هكتار': 10000, 'فدان': 4200, 'دونم': 1000, 'م²': 1 };
+    return (parseFloat(f.area) || 0) * (M[st().areaUnit] || 10000) / 10000;
+  };
+  const irrDays = () => {
+    const defaultDays =;
+    const d = J('sme_fs_days', defaultDays);
+    return (Array.isArray(d) && d.length === 3) ? d : defaultDays;
+  };
   const fmt = (n) => (Math.round(n * 100) / 100).toString();
 
-  // الجرعات المطلوبة لحقل في تاريخ معيّن
   const dueOn = (f, date) => {
-    const k = cropKey(f.crop); if (!k || !f.plant) return null;
-    const slot = irrDays().indexOf(wday(date)); if (slot < 0) return null;
-    const d = diffDays(f.plant, date); if (d < 0) return null;
-    const stg = PROG[k].stages.find(s => d >= s.from && d <= s.to); if (!stg) return null;
+    const k = cropKey(f.crop);
+    if (!k || !f.plant) return null;
+    const slot = irrDays().indexOf(wday(date));
+    if (slot < 0) return null;
+    const d = diffDays(f.plant, date);
+    if (d < 0) return null;
+    const stg = PROG[k].stages.find(s => d >= s.from && d <= s.to);
+    if (!stg) return null;
     return { k, d, stg, slot, items: stg.d[slot] || [] };
   };
+
   const doneMap = () => J('sme_fs_done', {});
   const isDone = (f, date) => !!doneMap()[f.id + '|' + date];
 
-  // ---------- المخزون ----------
   const deduct = (items, ha, fname) => {
-    const stock = J('sme_fert_stock', []), logs = J('sme_fert_logs', []), out = [];
+    const stock = J('sme_fert_stock', []);
+    const logs = J('sme_fert_logs', []);
+    const out = [];
     items.forEach(it => {
-      const amt = it.lo * ha; if (!(amt > 0)) return;
+      const amt = it.lo * ha;
+      if (!(amt > 0)) return;
       const found = MATCH.find(x => x[1] === it.p);
       if (!found) return;
       const m = found[0];
       const row = stock.find(x => m.test(String(x.name)) && (+x.qty || 0) > 0) || stock.find(x => m.test(String(x.name)));
       if (!row) { out.push(it.p + ': غير موجود بالمخزون'); return; }
-      const before = +row.qty || 0; row.qty = Math.max(0, Math.round((before - amt) * 100) / 100);
+      const before = +row.qty || 0;
+      row.qty = Math.max(0, Math.round((before - amt) * 100) / 100);
       logs.push({ date: ymd(new Date()), name: row.name, qty: Math.round(amt * 100) / 100, field: fname });
       out.push(row.name + ': −' + fmt(amt));
     });
-    lsSet('sme_fert_stock', JSON.stringify(stock)); lsSet('sme_fert_logs', JSON.stringify(logs));
+    lsSet('sme_fert_stock', JSON.stringify(stock));
+    lsSet('sme_fert_logs', JSON.stringify(logs));
     return out;
   };
 
-  // ---------- النافذة ----------
   let modal = null;
   const itemsHtml = (items, ha) => items.map(it => {
-    const lo = it.lo * ha, hi = it.hi * ha, q = lo === hi ? fmt(lo) : fmt(lo) + '–' + fmt(hi);
+    const lo = it.lo * ha, hi = it.hi * ha;
+    const q = lo === hi ? fmt(lo) : fmt(lo) + '–' + fmt(hi);
