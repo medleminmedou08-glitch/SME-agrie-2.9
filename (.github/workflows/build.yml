@@ -1,0 +1,60 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Prepare Web Assets and Inject All Modules
+        run: |
+          mkdir -p www
+          cp *.html *.png *.webmanifest *.js *.txt _headers www/ 2>/dev/null || true
+          rm -f www/sw.js
+          echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>' >> www/index.html
+          echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>' >> www/index.html
+          for f in bio-bridge.js invoicing.js ai-assistant.js pro-upgrade.js fertilizer-pro.js fertil-pro.js sme-dock.js; do
+            if [ -f "$f" ]; then
+              echo "Injecting $f..."
+              echo "<script>" >> www/index.html
+              cat "$f" >> www/index.html
+              echo "</script>" >> www/index.html
+            fi
+          done
+      - name: Install Capacitor and Add Android
+        run: |
+          npm install --legacy-peer-deps
+          npx cap add android
+          npx cap sync
+      - name: Set App Icon and Permissions
+        run: |
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          for dir in android/app/src/main/res/mipmap-*; do
+            if [ -d "$dir" ] && [ -f "icon-512.png" ]; then
+              cp icon-512.png "$dir/ic_launcher.png"
+              cp icon-512.png "$dir/ic_launcher_round.png"
+              cp icon-512.png "$dir/ic_launcher_foreground.png"
+            fi
+          done
+          sed -i 's/<uses-permission android:name="android.permission.INTERNET" \/>/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.USE_BIOMETRIC" \/>\n    <uses-permission android:name="android.permission.USE_FINGERPRINT" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>/' android/app/src/main/AndroidManifest.xml
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SME-Agri-App
+          path: android/app/build/outputs/apk/debug/app-debug.apk
