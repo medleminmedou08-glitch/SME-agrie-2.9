@@ -18,7 +18,7 @@
     // بيانات مخزن الأسمدة القياسية وسجل الصرف
     let stock = JSON.parse(localStorage.getItem('sme_fert_stock') || '[]');
     if (stock.length === 0) {
-      stock = [
+      stock = new Array(
         { id: 1, name: 'ماب MAP 12-61-0 (عالي الفوسفور)', qty: 200, price: 65, min: 50 },
         { id: 2, name: 'NPK 20-20-20 متوازن ذواب', qty: 400, price: 48, min: 100 },
         { id: 3, name: 'سلفات الأمونيوم 21% (نيتروجين + كبريت)', qty: 500, price: 32, min: 100 },
@@ -29,7 +29,7 @@
         { id: 8, name: 'سلفات المغنيسيوم 16% MgO', qty: 150, price: 30, min: 40 },
         { id: 9, name: 'عناصر صغرى مخلبية (حديد + زنك + منغنيز)', qty: 50, price: 120, min: 10 },
         { id: 10, name: 'حمض الفوسفوريك / الكبريتيك (تعديل pH)', qty: 100, price: 50, min: 25 }
-      ];
+      );
       localStorage.setItem('sme_fert_stock', JSON.stringify(stock));
     }
 
@@ -122,7 +122,6 @@
           const stage = document.getElementById('calcStage').value;
           const area = parseFloat(document.getElementById('calcArea').value) || 1;
 
-          // معاملات الاحتياج الحقيقية لكل محصول مقارنة بالطماطم (كجم/هكتار/أسبوع)
           const cropFactors = {
             tomato:     { n: 1.0,  p: 1.0,  k: 1.0  },
             watermelon: { n: 0.85, p: 0.8,  k: 0.95 },
@@ -132,13 +131,15 @@
           };
           const f = cropFactors[crop] || cropFactors.tomato;
           const nSource = soil === 'sandy' ? 'سلفات الأمونيوم 21% (مقاوم للغسيل)' : 'يوريا 46% أو نترات الأمونيوم';
-          const nMult = soil === 'sandy' ? 1.8 : 1.0; // تعويض فرق التركيز بين 21% و 46%
+          const nMult = soil === 'sandy' ? 1.8 : 1.0;
 
           const programs = {
             root: {
               title: 'مرحلة التأسيس وتنشيط الجذور (عالي الفوسفور)',
               npkPure: `الاحتياج الصافي: ${(5 * area * f.n).toFixed(1)} كغ N • ${(15 * area * f.p).toFixed(1)} كغ P₂O₅ • ${(4 * area * f.k).toFixed(1)} كغ K₂O`,
-              items: [
+              items: new Array(
                 { name: 'ماب MAP 12-61-0 (لتكوين المجموع الجذري)', kg: Math.round(25 * area * f.p) },
                 { name: nSource, kg: Math.round(8 * area * f.n * nMult) },
                 { name: 'هيوميك أسيد 85% (تحسين امتصاص الجذور)', kg: Math.round(3 * area * 10) / 10 },
+                { name: 'حمض الفوسفوريك أو الكبريتيك (لضبط pH الماء إلى 6.0)', kg: Math.round(2 * area * 10) / 10 }
+              ),
